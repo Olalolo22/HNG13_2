@@ -5,6 +5,59 @@ import os
 
 api_bp = Blueprint('api', __name__)
 
+@api_bp.route('/init-db', methods=['POST'])
+def init_db():
+    """Initialize database - Call once after deployment"""
+    try:
+        sql_statements = """
+        CREATE TABLE IF NOT EXISTS countries (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            capital VARCHAR(255),
+            region VARCHAR(100),
+            population BIGINT NOT NULL,
+            currency_code VARCHAR(10),
+            exchange_rate DECIMAL(15, 6),
+            estimated_gdp DECIMAL(20, 2),
+            flag_url TEXT,
+            last_refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_name (name),
+            INDEX idx_region (region),
+            INDEX idx_currency (currency_code)
+        );
+        
+        CREATE TABLE IF NOT EXISTS refresh_metadata (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            last_refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        );
+        
+        INSERT IGNORE INTO refresh_metadata (id) VALUES (1);
+        """
+        
+        from app.database import Database
+        with Database.get_cursor() as cursor:
+            for statement in sql_statements.split(';'):
+                if statement.strip():
+                    cursor.execute(statement)
+        
+        return jsonify({"message": "Database initialized successfully"}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@api_bp.route('/status', methods=['GET'])
+def get_status():
+    """Get API status with total countries and last refresh timestamp"""
+    try:
+        status = CountryService.get_status()
+        return jsonify(status), 200
+        
+    except Exception as e:
+        print(f"Status error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @api_bp.route('/countries/refresh', methods=['POST'])
 def refresh_countries():
     """Fetch and cache all countries and exchange rates"""
@@ -89,16 +142,4 @@ def delete_country(name):
         return jsonify({"message": f"Country '{name}' deleted successfully"}), 200
         
     except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@api_bp.route('/status', methods=['GET'])
-def get_status():
-    """Get API status with total countries and last refresh timestamp"""
-    try:
-        status = CountryService.get_status()
-        return jsonify(status), 200
-        
-    except Exception as e:
-        print(f"Status error: {e}")
         return jsonify({"error": "Internal server error"}), 500
